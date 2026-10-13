@@ -28,6 +28,9 @@ class DNSCryptService : Service() {
 
     private val worker = Executors.newSingleThreadExecutor()
     @Volatile private var process: Process? = null
+    @Volatile private var checkProcess: Process? = null
+    @Volatile private var starting = false
+    @Volatile private var stopping = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -50,14 +53,30 @@ class DNSCryptService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             STOP -> {
-                process?.destroy()
+                stopping = true
+                checkProcess?.destroy()
+                val old = process
+                process = null
+                old?.destroy()
                 report("STOPPED", "User stopped")
                 stopSelf()
             }
             START -> {
-                if (process?.isAlive == true) {
-                    report("READY", "Already running — restart explicitly to switch modes")
-                } else worker.execute { launch() }
+                if (starting || process?.isAlive == true) {
+                    report(if (starting) "STARTING" else "READY", "Stop before changing the DNS mode")
+                } else {
+                    val mode = intent.getStringExtra("mode") ?: "opendns"
+                    if (mode != "opendns" && mode != "quad9") {
+                        report("ERROR", "Invalid mode")
+                        stopSelf()
+                        return START_NOT_STICKY
+                    }
+                    getSharedPreferences("dnscrypt", MODE_PRIVATE).edit().putString("mode", mode).apply()
+                    starting = true
+                    stopping = false
+                    report("STARTING", "Checking signed DNS settings")
+                    worker.execute { launch() }
+                }
             }
         }
         return START_NOT_STICKY
@@ -77,21 +96,29 @@ class DNSCryptService : Service() {
             val check = ProcessBuilder(binary.absolutePath, "-config", config.absolutePath, "-check")
                 .directory(config.parentFile).redirectErrorStream(true)
                 .redirectOutput(File(config.parentFile, "check.log")).start()
+            checkProcess = check
             if (!check.waitFor(30, TimeUnit.SECONDS)) {
                 check.destroyForcibly()
                 error("Config check timed out")
             }
+            checkProcess = null
+            if (stopping) return
             check.exitValue().let { require(it == 0) { "Config validation failed: $it" } }
             val child = ProcessBuilder(binary.absolutePath, "-config", config.absolutePath)
                 .directory(config.parentFile).redirectErrorStream(true)
                 .redirectOutput(ProcessBuilder.Redirect.appendTo(File(config.parentFile, "proxy.log"))).start()
+            if (stopping) {
+                child.destroy()
+                return
+            }
             process = child
             var healthy = false
-            repeat(16) {
-                if (!child.isAlive) return@repeat
-                if (probe()) { healthy = true; return@repeat }
+            for (attempt in 0 until 16) {
+                if (stopping || !child.isAlive) break
+                if (probe()) { healthy = true; break }
                 Thread.sleep(500)
             }
+            if (stopping) return
             if (!healthy) {
                 report("DEGRADED", "DNS query failed (never fall back to system DNS)")
             } else {
@@ -99,15 +126,20 @@ class DNSCryptService : Service() {
             }
             Thread {
                 val code = child.waitFor()
-                if (process === child) {
+                if (process === child && !stopping) {
                     process = null
                     report("ERROR", "Proxy exited ($code)")
                     stopSelf()
                 }
             }.start()
         } catch (e: Exception) {
-            report("ERROR", e.message ?: e.javaClass.simpleName)
-            stopSelf()
+            if (!stopping) {
+                report("ERROR", e.message ?: e.javaClass.simpleName)
+                stopSelf()
+            }
+        } finally {
+            checkProcess = null
+            starting = false
         }
     }
 
@@ -127,11 +159,15 @@ class DNSCryptService : Service() {
             response.length >= 12 &&
                 (buffer[0].toInt() and 255) == (id ushr 8) &&
                 (buffer[1].toInt() and 255) == (id and 255) &&
-                (buffer[2].toInt() and 0x80) != 0
+                (buffer[2].toInt() and 0x80) != 0 &&
+                (buffer[3].toInt() and 0x0f) == 0 &&
+                (((buffer[6].toInt() and 255) shl 8) or (buffer[7].toInt() and 255)) > 0
         }
     } catch (_: Exception) { false }
 
     override fun onDestroy() {
+        stopping = true
+        checkProcess?.destroy()
         process?.destroy()
         worker.shutdownNow()
         super.onDestroy()

@@ -70,6 +70,7 @@ jobs:
           test "$(git -C upstream rev-parse HEAD)" = '458d2af16a8ece668d9453a3293004bdd08158e7'
           python3 scripts/strict_patch.py upstream/dnscrypt-proxy/xtransport.go
           gofmt -w upstream/dnscrypt-proxy/xtransport.go
+          cp upstream/LICENSE app/src/main/assets/LICENSE.dnscrypt-proxy
           ! grep -A 30 'func (xTransport \*XTransport) resolve(host string' upstream/dnscrypt-proxy/xtransport.go | grep -E 'resolveUsingSystem|bootstrapResolvers'
       - name: Install latest stable NDK
         shell: bash

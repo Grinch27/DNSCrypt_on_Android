@@ -25,12 +25,10 @@ class MainActivity : Activity() {
         layout.addView(TextView(this).apply { text = "DNSCrypt Android — EXPERIMENTAL\nLocal DNS: 127.0.0.1:15353" })
         layout.addView(status)
         addButton(layout, "Start OpenDNS DoH (default)") {
-            getSharedPreferences("dnscrypt", MODE_PRIVATE).edit().putString("mode", "opendns").apply()
-            send(DNSCryptService.START)
+            send(DNSCryptService.START, "opendns")
         }
         addButton(layout, "Start Quad9 DNSCrypt (4 ECS nodes)") {
-            getSharedPreferences("dnscrypt", MODE_PRIVATE).edit().putString("mode", "quad9").apply()
-            send(DNSCryptService.START)
+            send(DNSCryptService.START, "quad9")
         }
         addButton(layout, "Stop") { send(DNSCryptService.STOP) }
         addButton(layout, "Refresh state") { refresh() }
@@ -46,8 +44,9 @@ class MainActivity : Activity() {
         layout.addView(Button(this).apply { text = label; setOnClickListener { action() } })
     }
 
-    private fun send(action: String) {
+    private fun send(action: String, mode: String? = null) {
         val intent = Intent(this, DNSCryptService::class.java).setAction(action)
+        if (mode != null) intent.putExtra("mode", mode)
         if (action == DNSCryptService.START) startForegroundService(intent) else startService(intent)
         refresh()
     }

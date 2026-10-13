@@ -26,7 +26,7 @@ android {
         }
     }
 }
-val verifyNativePayload by tasks.registering {
+val verifyNativePayload = tasks.register("verifyNativePayload") {
     doLast {
         val native = file("src/main/jniLibs/arm64-v8a/libdnscryptproxy.so")
         val list = file("src/main/assets/quad9-resolvers.md")
