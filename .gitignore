@@ -1,0 +1,9 @@
+# Build products and generated, verified resolver resources
+.gradle/
+**/build/
+local.properties
+app/src/main/jniLibs/
+app/src/main/assets/quad9-resolvers.md
+app/src/main/assets/quad9-resolvers.md.minisig
+*.apk
+*.aab
