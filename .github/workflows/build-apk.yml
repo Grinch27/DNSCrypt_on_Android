@@ -31,7 +31,6 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: current
-      - uses: android-actions/setup-android@v3
       - name: Install Minisign
         run: sudo apt-get update && sudo apt-get install -y minisign binutils
       - name: Fetch and verify Quad9 signed source
@@ -76,7 +75,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sdkmanager --list --channel=0 > ndk-list.txt
+          sdkmanager_bin="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$sdkmanager_bin"
+          "$sdkmanager_bin" --list --channel=0 > ndk-list.txt
           NDK_VERSION="$(python3 - <<'PY'
           import re
           from pathlib import Path
@@ -88,7 +89,7 @@ jobs:
           PY
           )"
           set +o pipefail
-          yes | sdkmanager --install "ndk;$NDK_VERSION"
+          yes | "$sdkmanager_bin" --install "ndk;$NDK_VERSION"
           result=${PIPESTATUS[1]}
           set -o pipefail
           test "$result" -eq 0
