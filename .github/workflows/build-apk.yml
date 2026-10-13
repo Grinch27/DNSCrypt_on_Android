@@ -50,10 +50,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          curl --proto '=https' --tlsv1.2 --connect-timeout 12 --max-time 25 \
+          status="$(curl --proto '=https' --tlsv1.2 --connect-timeout 12 --max-time 25 \
             --resolve 'doh.opendns.com:443:146.112.41.2' \
-            -fsS -o /dev/null 'https://doh.opendns.com/dns-query' || \
-            { echo 'OpenDNS endpoint unavailable or invalid; fail closed' >&2; exit 1; }
+            -sS -H 'Accept: application/dns-message' -o doh-response.bin -w '%{http_code}' \
+            'https://doh.opendns.com/dns-query?dns=EjQBAAABAAAAAAAAB2V4YW1wbGUDY29tAAABAAE')"
+          test "$status" = 200
+          python3 - <<'PY'
+          from pathlib import Path
+          response=Path("doh-response.bin").read_bytes()
+          assert len(response)>=12 and response[:2]==bytes.fromhex("1234")
+          assert response[2] & 0x80, "Not a DNS response"
+          print("Validated OpenDNS DoH reply over direct-IP TLS")
+          PY
       - name: Fetch pinned upstream and apply strict resolver patch
         shell: bash
         run: |
