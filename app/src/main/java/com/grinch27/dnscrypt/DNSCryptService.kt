@@ -69,8 +69,13 @@ class DNSCryptService : VpnService() {
                 stopSelf()
             }
             START -> {
-                if (starting || process?.isAlive == true) {
-                    report(if (starting) "STARTING" else "READY", "Stop before changing the DNS mode")
+                if (starting || tunnel != null || process?.isAlive == true) {
+                    val state = when {
+                        starting -> "STARTING"
+                        process?.isAlive == true -> "READY"
+                        else -> "DEGRADED"
+                    }
+                    report(state, "Disconnect VPN before changing DNS mode or retrying")
                 } else {
                     val mode = intent.getStringExtra("mode") ?: "opendns"
                     if (mode != "opendns" && mode != "quad9") {
