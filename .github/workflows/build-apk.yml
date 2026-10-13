@@ -31,6 +31,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: current
+      - uses: android-actions/setup-android@v3
       - name: Install Minisign
         run: sudo apt-get update && sudo apt-get install -y minisign binutils
       - name: Fetch and verify Quad9 signed source
@@ -86,7 +87,11 @@ jobs:
           print(max(found, key=lambda x: tuple(map(int, x.split('.')))))
           PY
           )"
+          set +o pipefail
           yes | sdkmanager --install "ndk;$NDK_VERSION"
+          result=${PIPESTATUS[1]}
+          set -o pipefail
+          test "$result" -eq 0
           echo "NDK_VERSION=$NDK_VERSION" >> "$GITHUB_ENV"
       - name: Compile strict ARM64 Go ELF
         shell: bash
