@@ -35,6 +35,7 @@ class DNSCryptService : VpnService() {
     @Volatile private var stopping = false
     @Volatile private var tunnel: DnsVpnTunnel? = null
     @Volatile private var vpnFd: ParcelFileDescriptor? = null
+    @Volatile private var resolverReady = false
 
     // VpnService.onBind() must be inherited; it provides the system VPN control binder.
 
@@ -63,6 +64,7 @@ class DNSCryptService : VpnService() {
                 vpnFd = null
                 checkProcess?.destroy()
                 val old = process
+                resolverReady = false
                 process = null
                 old?.destroy()
                 report("STOPPED", "User stopped")
@@ -72,7 +74,7 @@ class DNSCryptService : VpnService() {
                 if (starting || tunnel != null || process?.isAlive == true) {
                     val state = when {
                         starting -> "STARTING"
-                        process?.isAlive == true -> "READY"
+                        resolverReady && process?.isAlive == true && tunnel != null -> "READY"
                         else -> "DEGRADED"
                     }
                     report(state, "Disconnect VPN before changing DNS mode or retrying")
@@ -152,20 +154,23 @@ class DNSCryptService : VpnService() {
                 Thread.sleep(500)
             }
             if (stopping) return
+            resolverReady = healthy
             if (!healthy) {
-                report("DEGRADED", "VPN connected; encrypted DNS unavailable (blocked; no fallback)")
+                report("DEGRADED", "VPN route is active, but local encrypted DNS probe failed; queries blocked")
             } else {
-                report("READY", "DNS-only VPN connected; upstream UDP DNS query passed")
+                report("READY", "VPN established; local encrypted resolver query passed (TUN not device-verified)")
             }
             Thread {
                 val code = child.waitFor()
                 if (process === child && !stopping) {
                     process = null
+                    resolverReady = false
                     report("DEGRADED", "VPN remains active; proxy exited ($code); DNS blocked")
                 }
             }.start()
         } catch (e: Exception) {
             if (!stopping) {
+                resolverReady = false
                 report(if (tunnel != null) "DEGRADED" else "ERROR",
                     (e.message ?: e.javaClass.simpleName) +
                     if (tunnel != null) " — VPN keeps DNS blocked" else "")
@@ -201,6 +206,7 @@ class DNSCryptService : VpnService() {
 
     override fun onRevoke() {
         stopping = true
+        resolverReady = false
         report("STOPPED", "VPN permission revoked; Android may resume system DNS")
         stopSelf()
         super.onRevoke()
@@ -208,6 +214,7 @@ class DNSCryptService : VpnService() {
 
     override fun onDestroy() {
         stopping = true
+        resolverReady = false
         tunnel?.close()
         tunnel = null
         vpnFd = null

@@ -35,7 +35,10 @@ internal class DnsVpnTunnel(
         try {
             while (running.get()) {
                 val length = input.read(buffer)
-                if (length < 0) break
+                if (length < 0) {
+                    if (running.get()) onError("TUN reached EOF; DNS forwarding is unavailable")
+                    break
+                }
                 if (length == 0) continue
                 val request = DnsTunPackets.parse(buffer, length) ?: continue
                 if (!slots.tryAcquire()) continue

@@ -127,6 +127,8 @@ jobs:
           python3 scripts/sync_agp.py
       - name: Build debug APK
         run: gradle --no-daemon --stacktrace :app:assembleDebug
+      - name: Validate split-route DNS-only VPN policy
+        run: python3 scripts/validate_vpn_policy.py
       - name: DNS-only TUN packet unit tests
         run: gradle --no-daemon --stacktrace :app:testDebugUnitTest
       - name: Validate ELF unchanged in APK
