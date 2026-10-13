@@ -12,6 +12,7 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import android.os.ParcelFileDescriptor
+import android.system.OsConstants
 import java.io.File
 import java.net.DatagramPacket
 import java.net.DatagramSocket
@@ -102,6 +103,7 @@ class DNSCryptService : VpnService() {
                 .addAddress(DnsTunPackets.LOCAL_IP, 32)
                 .addDnsServer(DnsTunPackets.DNS_IP)
                 .addRoute(DnsTunPackets.DNS_IP, 32)
+                .allowFamily(OsConstants.AF_INET6) // Otherwise Android blocks all ordinary IPv6 traffic.
                 .setBlocking(true)
                 .establish() ?: error("Android refused DNS-only VPN tunnel")
             if (stopping) {
