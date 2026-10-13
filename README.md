@@ -6,14 +6,14 @@ Standalone Android ARM64 APK, independent of [Awara](https://github.com/Grinch27
 ## Build and install
 
 - [GitHub Actions](https://github.com/Grinch27/DNSCrypt_on_Android/actions/workflows/build-apk.yml) builds a debug-signed APK on each `main` push and manual workflow dispatch.
-- Download the `dnscrypt-experimental-arm64` artifact from a successful run. Unzip and locate `app-debug.apk`.
+- Download the `DNSCrypt_on_Android-arm64-debug` artifact from a successful run. GitHub Actions automatically downloads artifacts as a ZIP; it now contains **exactly one file**: `DNSCrypt_on_Android-arm64-debug.apk` (no reports, source files, or additional folders). Extract and install that APK.
 - Sideload manually to an ARM64 Android 10+ test device. App never changes Android system DNS, installs a VPN, or requires Root.
 - Debug signing keys may differ on later builds. This is **not** a stable release signature.
 
 ## Use
 
 Open app; select **Start OpenDNS DoH** for `doh.opendns.com`, or **Start Quad9 DNSCrypt** for four no-filter ECS servers.
-Local endpoint: `127.0.0.1:15353` (UDP/TCP). Other apps must explicitly use this address; it is not system-wide DNS.
+Local endpoint: `127.0.0.1:15353` (UDP/TCP). Other apps must explicitly support a custom DNS server address **and port**; it is not system-wide DNS. Android's Private DNS setting accepts a DoT hostname, **not** this local UDP/TCP endpoint.
 Use **Stop** before selecting another mode; **Refresh state** reads the last state.
 Logs and config live in the private app directory. The first version intentionally uses locked TOML templates to avoid unsafe edits overriding the strict DNS policy.
 
