@@ -141,14 +141,16 @@ jobs:
           mkdir -p build/reports
           { echo "commit=$GITHUB_SHA"; go version; gradle --version | head -20; echo "ndk=${NDK_VERSION:-not-installed}"; grep 'com.android.application' build.gradle.kts || true; } > build/reports/toolchain.txt
           find app/build/outputs/apk -name '*.apk' -type f -exec sha256sum {} \; > build/reports/apk-sha256.txt 2>/dev/null || true
+      - name: Prepare APK-only artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -Dm644 app/build/outputs/apk/debug/app-debug.apk dist/DNSCrypt_on_Android-arm64-debug.apk
+          test "$(find dist -maxdepth 1 -type f | wc -l)" -eq 1
+          sha256sum dist/DNSCrypt_on_Android-arm64-debug.apk
       - uses: actions/upload-artifact@v4
-        if: always()
         with:
-          name: dnscrypt-experimental-arm64
-          path: |
-            app/build/outputs/apk/debug/*.apk
-            build/reports/
-            elf.sha256
-            embedded-elf.sha256
-          if-no-files-found: warn
+          name: DNSCrypt_on_Android-arm64-debug
+          path: dist/DNSCrypt_on_Android-arm64-debug.apk
+          if-no-files-found: error
           retention-days: 30
