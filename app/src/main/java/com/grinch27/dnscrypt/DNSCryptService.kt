@@ -6,11 +6,12 @@ package com.grinch27.dnscrypt
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.Service
+import android.net.VpnService
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.os.ParcelFileDescriptor
 import java.io.File
 import java.net.DatagramPacket
 import java.net.DatagramSocket
@@ -19,7 +20,7 @@ import java.security.SecureRandom
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
-class DNSCryptService : Service() {
+class DNSCryptService : VpnService() {
     companion object {
         const val START = "com.grinch27.dnscrypt.START"
         const val STOP = "com.grinch27.dnscrypt.STOP"
@@ -31,8 +32,10 @@ class DNSCryptService : Service() {
     @Volatile private var checkProcess: Process? = null
     @Volatile private var starting = false
     @Volatile private var stopping = false
+    @Volatile private var tunnel: DnsVpnTunnel? = null
+    @Volatile private var vpnFd: ParcelFileDescriptor? = null
 
-    override fun onBind(intent: Intent?): IBinder? = null
+    // VpnService.onBind() must be inherited; it provides the system VPN control binder.
 
     override fun onCreate() {
         super.onCreate()
@@ -54,6 +57,9 @@ class DNSCryptService : Service() {
         when (intent?.action) {
             STOP -> {
                 stopping = true
+                tunnel?.close()
+                tunnel = null
+                vpnFd = null
                 checkProcess?.destroy()
                 val old = process
                 process = null
@@ -75,7 +81,7 @@ class DNSCryptService : Service() {
                     starting = true
                     stopping = false
                     report("STARTING", "Checking signed DNS settings")
-                    worker.execute { launch() }
+                    worker.execute { establishDnsVpnAndLaunch() }
                 }
             }
         }
@@ -87,8 +93,28 @@ class DNSCryptService : Service() {
             .putString("state", state).putString("detail", detail).apply()
     }
 
-    private fun launch() {
+    private fun establishDnsVpnAndLaunch() {
         try {
+            check(VpnService.prepare(this) == null) { "Android VPN permission missing" }
+            val fd = Builder()
+                .setSession("DNSCrypt DNS-only")
+                .setMtu(1500)
+                .addAddress(DnsTunPackets.LOCAL_IP, 32)
+                .addDnsServer(DnsTunPackets.DNS_IP)
+                .addRoute(DnsTunPackets.DNS_IP, 32)
+                .setBlocking(true)
+                .establish() ?: error("Android refused DNS-only VPN tunnel")
+            if (stopping) {
+                fd.close()
+                return
+            }
+            vpnFd = fd
+            val forwarding = DnsVpnTunnel(this, fd) { detail ->
+                if (!stopping) report("DEGRADED", detail)
+            }
+            tunnel = forwarding
+            forwarding.start()
+            report("STARTING", "DNS-only VPN established; validating encrypted resolver")
             val binary = File(applicationInfo.nativeLibraryDir, "libdnscryptproxy.so")
             require(binary.isFile) { "Extracted native executable missing" }
             val mode = getSharedPreferences("dnscrypt", MODE_PRIVATE).getString("mode", "opendns")!!
@@ -120,22 +146,23 @@ class DNSCryptService : Service() {
             }
             if (stopping) return
             if (!healthy) {
-                report("DEGRADED", "DNS query failed (never fall back to system DNS)")
+                report("DEGRADED", "VPN connected; encrypted DNS unavailable (blocked; no fallback)")
             } else {
-                report("READY", "DNS UDP query answered by managed process")
+                report("READY", "DNS-only VPN connected; upstream UDP DNS query passed")
             }
             Thread {
                 val code = child.waitFor()
                 if (process === child && !stopping) {
                     process = null
-                    report("ERROR", "Proxy exited ($code)")
-                    stopSelf()
+                    report("DEGRADED", "VPN remains active; proxy exited ($code); DNS blocked")
                 }
             }.start()
         } catch (e: Exception) {
             if (!stopping) {
-                report("ERROR", e.message ?: e.javaClass.simpleName)
-                stopSelf()
+                report(if (tunnel != null) "DEGRADED" else "ERROR",
+                    (e.message ?: e.javaClass.simpleName) +
+                    if (tunnel != null) " — VPN keeps DNS blocked" else "")
+                if (tunnel == null) stopSelf()
             }
         } finally {
             checkProcess = null
@@ -165,8 +192,18 @@ class DNSCryptService : Service() {
         }
     } catch (_: Exception) { false }
 
+    override fun onRevoke() {
+        stopping = true
+        report("STOPPED", "VPN permission revoked; Android may resume system DNS")
+        stopSelf()
+        super.onRevoke()
+    }
+
     override fun onDestroy() {
         stopping = true
+        tunnel?.close()
+        tunnel = null
+        vpnFd = null
         checkProcess?.destroy()
         process?.destroy()
         worker.shutdownNow()
