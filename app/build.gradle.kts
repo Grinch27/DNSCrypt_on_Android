@@ -26,6 +26,9 @@ android {
         }
     }
 }
+dependencies {
+    testImplementation("junit:junit:latest.release")
+}
 val verifyNativePayload = tasks.register("verifyNativePayload") {
     doLast {
         val native = file("src/main/jniLibs/arm64-v8a/libdnscryptproxy.so")

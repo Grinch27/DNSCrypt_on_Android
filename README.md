@@ -1,7 +1,7 @@
 # DNSCrypt on Android
 
 Standalone Android ARM64 APK, independent of [Awara](https://github.com/Grinch27/awara).
-**Status: experimental. GitHub Actions compilation passed; Android device behavior and DNS leak prevention are not yet validated.**
+**Status: experimental DNS-only VPN. Android device behavior, Private DNS interaction and leak prevention are not yet validated.**
 
 ## Build and install
 
@@ -12,9 +12,9 @@ Standalone Android ARM64 APK, independent of [Awara](https://github.com/Grinch27
 
 ## Use
 
-Open app; select **Start OpenDNS DoH** for `doh.opendns.com`, or **Start Quad9 DNSCrypt** for four no-filter ECS servers.
+Open app; select **Connect DNS-only VPN · OpenDNS DoH** for `doh.opendns.com`, or **Connect DNS-only VPN · Quad9 DNSCrypt** for four no-filter ECS servers. Accept the Android system VPN authorization dialog at first start. The status bar then displays a VPN icon if Android establishes the interface.
 Local endpoint: `127.0.0.1:15353` (UDP/TCP). Other apps must explicitly support a custom DNS server address **and port**; it is not system-wide DNS. Android's Private DNS setting accepts a DoT hostname, **not** this local UDP/TCP endpoint.
-Use **Stop** before selecting another mode; **Refresh state** reads the last state.
+Use **Disconnect VPN** before selecting another mode; **Refresh state** reads the last state. The VPN interface advertises synthetic DNS `10.111.0.1` and routes **only `10.111.0.1/32`** into TUN. The phone's ordinary network traffic is not tunneled. UDP DNS queries are bridged to `127.0.0.1:15353`; TCP DNS/53 is not yet supported and deliberately fails closed (large truncated DNS answers may fail). Other applications need no manual custom DNS port when their queries use Android's default resolver.
 Logs and config live in the private app directory. The first version intentionally uses locked TOML templates to avoid unsafe edits overriding the strict DNS policy.
 
 ## Security boundary and verification
@@ -25,7 +25,10 @@ Logs and config live in the private app directory. The first version intentional
 - The Go executable is packaged as `libdnscryptproxy.so` inside `nativeLibraryDir`, but it remains an ELF **program**, not a JNI shared library. Android 10–17 execution is unconfirmed.
 - CI fails if Go ELF `PT_LOAD` alignment is below 16KB or if APK packaging changes the ELF bytes.
 - No Android device tests, actual listener/PID ownership tests, TCP tests, sleep/network transitions or packet capture have passed yet. A host CI success is **not proof** of zero DNS leakage.
-- Android itself and other apps may still make independent DNS queries; no-VPN design cannot intercept them.
+- Android Private DNS (DoT), apps with built-in encrypted DNS (DoH/DoT), IPv6 private DNS, direct-IP traffic and apps bypassing Android's resolver may not be captured. For initial manual validation, turn Android Private DNS **Off** (not Automatic) before VPN test; this is not a bypass of the proxy's TLS requirement.
+- Android allows only one VPN per user/profile. Another VPN may disconnect; Android's "Always-on VPN / Block connections without VPN" settings require separate compatibility verification.
+- If dnscrypt-proxy fails while the TUN is active, the app keeps its DNS-specific VPN route and drops queries. OS VPN revocation/service death removes that protection, so zero system-wide DNS leakage is **not** currently established.
+- Current TUN only supports IPv4 UDP port 53 destined to the synthetic DNS IP; TCP DNS support, IPv6 transport and MTU overflow need further work.
 
 Toolchains: latest stable Go, Gradle and Android NDK selected at build time; AGP resolved from Google's stable Maven metadata; actual versions and APK SHA256 recorded in Actions artifacts. Upstream and third-party sources remain subject to their licenses.
 
